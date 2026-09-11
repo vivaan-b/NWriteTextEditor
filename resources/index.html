@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>NWrite</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 250px;
+            background: #181818;
+            border-right: 1px solid #2b2b2b;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar-controls {
+            padding: 12px;
+            border-bottom: 1px solid #2b2b2b;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .new-btn {
+            background: #252526;
+            color: #fff;
+            border: 1px solid #3c3c3c;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .new-btn:hover { background: #2d2d2d; }
+        .search-input {
+            background: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            outline: none;
+            font-size: 13px;
+        }
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            list-style: none;
+            padding: 8px;
+        }
+        .file-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #aaaaaa;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-item:hover { background: #2a2a2a; color: #fff; }
+        .file-item.active { background: #37373d; color: #fff; }
+        
+        .main-editor {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #1e1e1e;
+        }
+        .toolbar {
+            height: 40px;
+            background: #1e1e1e;
+            border-bottom: 1px solid #2b2b2b;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+        }
+        .format-group button {
+            background: transparent;
+            color: #cccccc;
+            border: none;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 3px;
+        }
+        .format-group button:hover { background: #2d2d2d; color: #fff; }
+        .save-btn {
+            background: #0e639c;
+            color: #fff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .save-btn:hover { background: #1177bb; }
+        
+        .content-area {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .paper {
+            width: 100%;
+            max-width: 700px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .title-input {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 28px;
+            font-weight: bold;
+            outline: none;
+            width: 100%;
+        }
+        .editor-box {
+            background: transparent;
+            border: none;
+            color: #e0e0e0;
+            font-size: 16px;
+            line-height: 1.6;
+            outline: none;
+            width: 100%;
+            min-height: 500px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-controls">
+            <button class="new-btn" onclick="newDoc()">+ New Document</button>
+            <input type="text" id="search" class="search-input" placeholder="Search notes..." oninput="searchFiles()">
+        </div>
+        <ul id="files" class="file-list"></ul>
+    </div>
+
+    <div class="main-editor">
+        <div class="toolbar">
+            <div class="format-group">
+                <button style="font-weight:bold;" onclick="cmd('bold')">B</button>
+                <button style="font-style:italic;" onclick="cmd('italic')">I</button>
+                <button style="text-decoration:underline;" onclick="cmd('underline')">U</button>
+            </div>
+            <button class="save-btn" onclick="save()">Save Note</button>
+        </div>
+        <div class="content-area">
+            <div class="paper">
+                <input type="text" id="title" class="title-input" placeholder="Untitled">
+                <div id="text" class="editor-box" contenteditable="true"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/neutralino.js"></script>
+    <script>
+        let dataDir = "";
+        let currentFile = "";
+        let fileCache = [];
+
+        Neutralino.init();
+
+        Neutralino.events.on("ready", async () => {
+            dataDir = window.NL_CWD + "\\resourcesUserData";
+            try {
+                await Neutralino.filesystem.createDirectory(dataDir);
+            } catch(e) {}
+            refreshList();
+        });
+
+        async function refreshList() {
+            try {
+                let items = await Neutralino.filesystem.readDirectory(dataDir);
+                fileCache = items.filter(i => i.type === 'FILE' && i.entry.endsWith('.json'));
+                showList(fileCache);
+            } catch(e) {}
+        }
+
+        function showList(list) {
+            let html = "";
+            if (list.length === 0) {
+                html = '<li class="file-item" style="opacity:0.5;cursor:default;">No notes</li>';
+            } else {
+                list.forEach(f => {
+                    let name = f.entry.replace('.json', '');
+                    let activeClass = f.entry === currentFile ? 'active' : '';
+                    html += `<li class="file-item ${activeClass}" onclick="openFile('${f.entry}')">${name}</li>`;
+                });
+            }
+            document.getElementById('files').innerHTML = html;
+        }
+
+        function searchFiles() {
+            let q = document.getElementById('search').value.toLowerCase();
+            let filtered = fileCache.filter(f => f.entry.toLowerCase().includes(q));
+            showList(filtered);
+        }
+
+        async function openFile(filename) {
+            try {
+                let raw = await Neutralino.filesystem.readFile(dataDir + "\\" + filename);
+                let doc = JSON.parse(raw);
+                document.getElementById('title').value = doc.title || "";
+                document.getElementById('text').innerHTML = doc.body || "";
+                currentFile = filename;
+                searchFiles();
+            } catch(e) {}
+        }
+
+        async function save() {
+            let title = document.getElementById('title').value.trim() || "Untitled";
+            let body = document.getElementById('text').innerHTML;
+            
+            if (!currentFile) {
+                currentFile = title.replace(/[^a-z0-9]/gi, '_').toLowerCase() + "_" + Date.now() + ".json";
+            }
+            
+            let data = JSON.stringify({ title, body }, null, 2);
+            try {
+                await Neutralino.filesystem.writeFile(dataDir + "\\" + currentFile, data);
+                refreshList();
+            } catch(e) {
+                alert("Save failed");
+            }
+        }
+
+        function newDoc() {
+            currentFile = "";
+            document.getElementById('title').value = "";
+            document.getElementById('text').innerHTML = "";
+            searchFiles();
+            document.getElementById('title').focus();
+        }
+
+        function cmd(type) {
+            document.execCommand(type, false, null);
+            document.getElementById('text').focus();
+        }
+    </script>
+</body>
+</html>
